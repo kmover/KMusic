@@ -1,0 +1,45 @@
+{
+  "name": "kmusic",
+  "version": "1.0.0",
+  "description": "本地音乐播放器",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "music-metadata": "^11.12.3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "vite": "^6.0.0",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.kmusic.app",
+    "productName": "KMusic",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "electron/app.ico"
+    }
+  }
+}

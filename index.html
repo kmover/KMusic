@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KMusic</title>
+  <link rel="stylesheet" href="./6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- 自定义标题栏 -->
+  <div id="titlebar">
+    <div class="titlebar-drag">
+      <i class="fa-solid fa-music titlebar-icon"></i>
+      <span class="titlebar-title">KMusic</span>
+    </div>
+    <div class="titlebar-controls">
+      <button id="btn-minimize" title="最小化"><i class="fa-solid fa-window-minimize"></i></button>
+      <button id="btn-close" title="关闭"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+  </div>
+
+  <!-- 主体布局 -->
+  <div id="app" style="display:none">
+    <!-- 左侧：分组列表 -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h3><i class="fa-solid fa-list"></i> 我的歌单</h3>
+        <button id="btn-add-group" class="btn-icon" title="新建分组"><i class="fa-solid fa-plus"></i></button>
+      </div>
+      <ul id="group-list"></ul>
+    </aside>
+
+    <!-- 右侧：歌曲列表 & 播放区域 -->
+    <main id="main-content">
+      <div id="playlist-header">
+        <h2 id="current-group-name">默认列表</h2>
+        <div class="search-input-wrap">
+          <input type="text" id="search-input" placeholder="搜索歌曲、歌手..." />
+          <button id="btn-search" title="搜索"><i class="fa-solid fa-magnifying-glass"></i></button>
+        </div>
+        
+      </div>
+      <div id="song-list-container">
+        <table id="song-table">
+          <thead>
+            <tr>
+              <th class="col-index">#</th>
+              <th class="col-title sortable" id="sort-title">标题</th>
+              <th class="col-artist sortable" id="sort-artist">歌手</th>
+              <th class="col-duration">时长</th>
+              <th class="col-action">操作</th>
+            </tr>
+          </thead>
+          <tbody id="song-tbody"></tbody>
+        </table>
+        <div id="empty-hint" class="empty-hint">
+          <div class="empty-icon"><i class="fa-solid fa-music"></i></div>
+          <p>暂无歌曲，点击「导入歌曲」添加</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 频谱可视化层 -->
+  <div id="spectrum-layer">
+    <canvas id="spectrum-canvas"></canvas>
+    <canvas id="circle-canvas"></canvas>
+    <div id="circle-title" class="circle-song-info">歌曲名称</div>
+    <div id="circle-artist" class="circle-song-info">歌手</div>
+    <!-- 歌词面板 -->
+    <div id="lrc-panel">
+      <div id="lrc-list"></div>
+    </div>
+    <span class="spectrum-mode-label">条形频谱</span>
+  </div>
+
+  <!-- 设置面板 -->
+  <div id="settings-panel" style="display:none">
+    <div class="settings-section">
+      <div class="settings-label">频谱样式</div>
+      <div class="spectrum-options" id="spectrum-options"></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">环境混响</div>
+      <label class="settings-toggle">
+        <input type="checkbox" id="reverb-toggle" />
+        <span>启用环境混响</span>
+      </label>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">混响增益</span>
+        <input type="range" id="reverb-wet-gain" class="reverb-range" min="0" max="200" value="35" step="1" />
+        <span class="reverb-val" id="reverb-wet-val">35%</span>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">低音增强</div>
+      <label class="settings-toggle">
+        <input type="checkbox" id="bass-toggle" />
+        <span>启用低音增强</span>
+      </label>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">分频点</span>
+        <input type="range" id="bass-freq" class="reverb-range" min="40" max="300" value="80" step="1" />
+        <span class="reverb-val" id="bass-freq-val">80Hz</span>
+      </div>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">低音增益</span>
+        <input type="range" id="bass-boost-gain" class="reverb-range" min="0" max="24" value="8" step="1" />
+        <span class="reverb-val" id="bass-boost-val">+8dB</span>
+      </div>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">增强增益</span>
+        <input type="range" id="bass-wet-gain" class="reverb-range" min="0" max="200" value="50" step="1" />
+        <span class="reverb-val" id="bass-wet-val">50%</span>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">主题选择</div>
+      <div class="theme-grid" id="theme-grid"></div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">按键设置</div>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-media-keys" />
+        <span>响应键盘媒体按键</span>
+      </label>
+      <div class="shortcut-grid">
+        <div class="shortcut-row">
+          <span class="shortcut-label">播放/暂停</span>
+          <div class="shortcut-input" id="sc-play" data-key="Space">Space</div>
+        </div>
+        <div class="shortcut-row">
+          <span class="shortcut-label">上一曲</span>
+          <div class="shortcut-input" id="sc-prev" data-key="">—</div>
+        </div>
+        <div class="shortcut-row">
+          <span class="shortcut-label">下一曲</span>
+          <div class="shortcut-input" id="sc-next" data-key="">—</div>
+        </div>
+        <div class="shortcut-row">
+          <span class="shortcut-label">音量 ↑</span>
+          <div class="shortcut-input" id="sc-volup" data-key="ArrowUp">↑</div>
+        </div>
+        <div class="shortcut-row">
+          <span class="shortcut-label">音量 ↓</span>
+          <div class="shortcut-input" id="sc-voldown" data-key="ArrowDown">↓</div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">播放列表</div>
+      <label class="settings-toggle">
+        <input type="checkbox" id="toggle-auto-close" />
+        <span>点击歌曲后自动关闭播放列表</span>
+      </label>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">数据管理</div>
+      <div class="settings-data-actions">
+        <button id="btn-scan-directory" class="settings-action-btn scan" title="选择一个音乐根目录，按子目录自动创建分组并导入歌曲"><i class="fa-solid fa-folder-open"></i> 扫描目录导入</button>
+        <button id="btn-refresh-songs" class="settings-action-btn refresh" title="重新解析所有歌曲的元数据（歌名、歌手、歌词、封面等）"><i class="fa-solid fa-rotate"></i> 刷新歌曲数据</button>
+        <button id="btn-remove-missing" class="settings-action-btn remove" title="删除文件已不存在的歌曲记录"><i class="fa-solid fa-eraser"></i> 删除失效歌曲</button>
+        <button id="btn-clear-db" class="settings-clear-btn" title="清空所有歌曲数据"><i class="fa-solid fa-broom"></i> 清空歌曲数据</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部播放器 -->
+  <footer id="player-bar">
+    <!-- 当前歌曲信息 -->
+    <div class="player-info">
+      <div class="player-cover" id="player-cover"><i class="fa-solid fa-compact-disc"></i></div>
+      <div class="player-meta">
+        <div class="player-title" id="player-title">未在播放</div>
+        <div class="player-artist" id="player-artist">--</div>
+        <div class="player-lrc" id="player-lrc"></div>
+      </div>
+    </div>
+
+    <!-- 播放控制（进度条居中撑满，按钮靠右） -->
+    <div class="player-controls">
+      <div class="player-progress">
+        <span id="time-current">00:00</span>
+        <div class="progress-bar" id="progress-bar">
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill">
+              <div class="progress-thumb" id="progress-thumb"></div>
+            </div>
+          </div>
+        </div>
+        <span id="time-total">00:00</span>
+      </div>
+      <div class="player-actions">
+        <button id="btn-mode" class="btn-ctrl btn-mode" title="循环模式"><i class="fa-solid fa-arrow-rotate-right"></i></button>
+        <button id="btn-prev" class="btn-ctrl" title="上一曲"><i class="fa-solid fa-backward-step"></i></button>
+        <button id="btn-play" class="btn-ctrl btn-play" title="播放"><i class="fa-solid fa-play"></i></button>
+        <button id="btn-next" class="btn-ctrl" title="下一曲"><i class="fa-solid fa-forward-step"></i></button>
+        <button id="btn-volume" class="btn-volume-icon" title="静音"><i class="fa-solid fa-volume-high"></i></button>
+        <div class="volume-bar" id="volume-bar">
+          <div class="volume-track">
+            <div class="volume-fill" id="volume-fill">
+              <div class="volume-thumb" id="volume-thumb"></div>
+            </div>
+          </div>
+        </div>
+        <button id="btn-playlist" class="btn-ctrl" title="播放列表"><i class="fa-solid fa-list"></i></button>
+        <button id="btn-settings" class="btn-ctrl" title="设置"><i class="fa-solid fa-gear"></i></button>
+      </div>
+    </div>
+
+    <!-- 隐藏的 audio 元素 -->
+    <audio id="audio-player" preload="auto"></audio>
+  </footer>
+
+  <!-- 弹窗：新建分组 -->
+  <div id="modal-add-group" class="modal">
+    <div class="modal-content">
+      <h3>新建分组</h3>
+      <input type="text" id="input-group-name" placeholder="输入分组名称" maxlength="30" />
+      <div class="modal-buttons">
+        <button id="btn-group-cancel" class="btn">取消</button>
+        <button id="btn-group-confirm" class="btn btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗：确认删除 -->
+  <div id="modal-confirm" class="modal">
+    <div class="modal-content modal-small">
+      <p id="confirm-message"></p>
+      <div class="modal-buttons">
+        <button id="btn-confirm-cancel" class="btn">取消</button>
+        <button id="btn-confirm-ok" class="btn btn-danger">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

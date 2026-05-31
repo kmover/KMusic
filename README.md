@@ -85,7 +85,13 @@ npm run electron:build
 
 ## 打包输出
 
-构建产物输出到 `release/` 目录，包含 NSIS 安装包。
+构建产物输出到 `release/` 目录，为便携式 zip 压缩包，解压即用。
+
+## GitHub Actions 自动构建
+
+推送代码到 `main` 分支或创建版本标签（`v*`）时，GitHub Actions 会自动构建 Windows zip 包。
+
+构建产物可在 Actions 页面的 Artifacts 中下载。
 
 ## 设置持久化
 

@@ -1,41 +1,43 @@
-name: Build KMusic
+name: Build & Release
 
 on:
   push:
-    branches: [main]
     tags:
-      - 'v*'
-  pull_request:
-    branches: [main]
+      - 'v*'               # 推送 v1.0.0 等 tag 时触发
+  workflow_dispatch:        # 允许手动触发
+
+permissions:
+  contents: write           # 允许创建 Release
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: 20
 
-      - name: Install dependencies
+      - name: 安装依赖
         run: npm ci
 
-      - name: Rebuild native modules
+      - name: 重编译原生模块 (better-sqlite3)
         run: npx electron-rebuild -f -w better-sqlite3
 
-      - name: Build Vite
-        run: npx vite build
+      - name: 构建前端
+        run: npm run build
 
-      - name: Build Electron (zip)
-        run: npx electron-builder --win zip
+      - name: 打包 (electron-builder)
+        run: npx electron-builder --win --publish=never
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: KMusic-win-x64
-          path: release/KMusic-*.zip
+      - name: 上传 Release
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem release\*.zip | Select-Object -First 1
+          gh release create $env:GITHUB_REF_NAME $zip --title $env:GITHUB_REF_NAME --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

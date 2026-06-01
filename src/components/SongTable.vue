@@ -81,9 +81,13 @@ const sortArtistClass = computed(() => ({
   'sort-desc': library.sortKey === 'artist' && library.sortOrder === 'desc',
 }))
 
+const currentSongId = computed(() => {
+  if (player.currentSongIndex < 0) return null
+  return library.filteredSongs[player.currentSongIndex]?.id ?? null
+})
+
 function isCurrentSong(song) {
-  return player.currentSongIndex >= 0 &&
-    library.filteredSongs[player.currentSongIndex]?.id === song.id
+  return currentSongId.value !== null && currentSongId.value === song.id
 }
 
 function matchesSearch(song) {
@@ -138,11 +142,29 @@ function confirmDeleteSong(song) {
   })
 }
 
-// Auto-scroll to active result
+// Auto-scroll to active search result
 watch(() => library.searchActiveIndex, () => {
   nextTick(() => {
     const active = document.querySelector('#song-tbody tr.search-active')
     if (active) active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+})
+
+// Auto-scroll to currently playing song when it changes
+watch(() => player.currentSongIndex, () => {
+  if (!library.showPlaylist) return
+  nextTick(() => {
+    const row = document.querySelector('#song-tbody tr.playing')
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+})
+
+// If playlist becomes visible while a song is playing, scroll to it
+watch(() => library.showPlaylist, (visible) => {
+  if (!visible || player.currentSongIndex < 0) return
+  nextTick(() => {
+    const row = document.querySelector('#song-tbody tr.playing')
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 })
 </script>

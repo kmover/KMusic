@@ -23,7 +23,8 @@ export const useLibraryStore = defineStore('library', () => {
     volup: 'ArrowUp', voldown: 'ArrowDown'
   })
   const showSettings = ref(false)
-  const showPlaylist = ref(false)
+  // 初始为 true，首次渲染即完成布局计算，后续切换 display 无开销
+  const showPlaylist = ref(true)
   const showGroupModal = ref(false)
   const showConfirmModal = ref(false)
   const confirmMessage = ref('')
@@ -36,17 +37,19 @@ export const useLibraryStore = defineStore('library', () => {
 
   // ---- Getters ----
   const filteredSongs = computed(() => {
-    let list = [...songs.value]
-
-    // sort
-    if (sortKey.value) {
-      list.sort((a, b) => {
-        const va = (a[sortKey.value] || '').toLowerCase()
-        const vb = (b[sortKey.value] || '').toLowerCase()
-        const cmp = va.localeCompare(vb, 'zh-Hans-CN')
-        return sortOrder.value === 'asc' ? cmp : -cmp
-      })
+    // 无排序时直接返回原数组，避免不必要的浅拷贝
+    if (!sortKey.value) {
+      return songs.value
     }
+
+    // 有排序时才拷贝并排序
+    const list = [...songs.value]
+    list.sort((a, b) => {
+      const va = (a[sortKey.value] || '').toLowerCase()
+      const vb = (b[sortKey.value] || '').toLowerCase()
+      const cmp = va.localeCompare(vb, 'zh-Hans-CN')
+      return sortOrder.value === 'asc' ? cmp : -cmp
+    })
     return list
   })
 

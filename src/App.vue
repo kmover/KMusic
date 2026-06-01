@@ -68,9 +68,10 @@ onMounted(async () => {
   player.bassBoostGain = (settings.bassBoostGain !== undefined) ? settings.bassBoostGain : 8
   player.bassBoostWetGain = (settings.bassBoostWetGain !== undefined) ? settings.bassBoostWetGain : 0.5
 
-  // Restore playlist visibility
-  if (library._restorePlaylistVisible) {
-    library.showPlaylist = true
+  // 恢复播放列表可见性：首次渲染时 showPlaylist 已为 true（浏览器已完成首帧布局），
+  // 此处根据持久化设置决定是否隐藏。上次关闭时可见则保持显示，否则隐藏。
+  if (!library._restorePlaylistVisible) {
+    library.showPlaylist = false
   }
 
   // Load groups

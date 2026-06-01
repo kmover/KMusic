@@ -1,6 +1,6 @@
 {
   "name": "kmusic",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "本地音乐播放器",
   "main": "electron/main.js",
   "scripts": {
@@ -12,10 +12,13 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
-    "music-metadata": "^11.12.3"
+    "music-metadata": "^11.12.3",
+    "vue": "^3.4.0",
+    "pinia": "^2.1.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
+    "@vitejs/plugin-vue": "^5.0.0",
     "concurrently": "^9.1.0",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",

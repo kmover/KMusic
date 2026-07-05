@@ -36,12 +36,12 @@
             'search-highlight': matchesSearch(song),
             'search-active': isSearchActive(song, index)
           }"
-          @click="playSong(index)"
+          @click="playSong(index, $event)"
         >
           <td class="col-index">{{ index + 1 }}</td>
-          <td class="col-title">{{ song.title }}</td>
-          <td class="col-artist">{{ song.artist }}</td>
-          <td class="col-duration">{{ formatDuration(song.duration) }}</td>
+          <td class="col-title copyable-text">{{ song.title }}</td>
+          <td class="col-artist copyable-text">{{ song.artist }}</td>
+          <td class="col-duration copyable-text">{{ formatDuration(song.duration) }}</td>
           <td class="col-action">
             <button class="btn-song-del" title="删除" @click.stop="confirmDeleteSong(song)">
               <i class="fa-solid fa-trash-can"></i>
@@ -129,7 +129,8 @@ function focusSearch() {
   document.querySelector('#search-input')?.focus()
 }
 
-function playSong(index) {
+function playSong(index, event) {
+  if (window.getSelection()?.toString()) return
   player.playSong(index)
 }
 

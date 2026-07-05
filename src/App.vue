@@ -61,8 +61,11 @@ onMounted(async () => {
   player.repeatMode = settings.repeatMode || 'all'
   player.shuffleMode = !!settings.shuffleMode
   player.spectrumMode = settings.spectrumMode || 'bar'
-  player.reverbEnabled = !!settings.reverbEnabled
-  player.reverbWetGain = (settings.reverbWetGain !== undefined) ? settings.reverbWetGain : 0.35
+  player.convolutionFileName = settings.convolutionFileName || null
+  player.convolutionMainGain = (settings.convolutionMainGain !== undefined) ? settings.convolutionMainGain : 0
+  player.convolutionSendGain = (settings.convolutionSendGain !== undefined) ? settings.convolutionSendGain : 0
+  player.convolutionSelectionKey = settings.convolutionSelectionKey || (player.convolutionFileName ? '' : 'builtin:default')
+  player.convolutionPresets = Array.isArray(settings.convolutionPresets) ? settings.convolutionPresets : []
   player.bassBoostEnabled = !!settings.bassBoostEnabled
   player.bassBoostFreq = settings.bassBoostFreq || 80
   player.bassBoostGain = (settings.bassBoostGain !== undefined) ? settings.bassBoostGain : 8

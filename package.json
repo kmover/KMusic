@@ -6,21 +6,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "echo kMusic install ok",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
     "music-metadata": "^11.12.3",
-    "vue": "^3.4.0",
-    "pinia": "^2.1.0"
+    "pinia": "^2.1.0",
+    "sql.js": "^1.11.0",
+    "vue": "^3.4.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.1",
     "@vitejs/plugin-vue": "^5.0.0",
     "concurrently": "^9.1.0",
-    "electron": "^33.2.0",
+    "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
     "vite": "^6.0.0",
     "wait-on": "^8.0.1"
@@ -37,11 +36,10 @@
       "package.json"
     ],
     "extraResources": [],
-    "asarUnpack": [
-      "node_modules/better-sqlite3/**"
-    ],
     "win": {
-      "target": ["zip"],
+      "target": [
+        "zip"
+      ],
       "icon": "electron/app.ico"
     }
   }

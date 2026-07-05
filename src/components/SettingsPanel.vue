@@ -14,17 +14,59 @@
       </div>
     </div>
 
-    <!-- 环境混响 -->
+    <!-- 环境混响音效 -->
     <div class="settings-section">
-      <div class="settings-label">环境混响</div>
-      <label class="settings-toggle">
-        <input type="checkbox" v-model="player.reverbEnabled" @change="onReverbToggle" />
-        <span>启用环境混响</span>
-      </label>
-      <div class="reverb-slider-row">
-        <span class="reverb-label">混响增益</span>
-        <input type="range" class="reverb-range" min="0" max="200" v-model.number="reverbWetPercent" @input="onReverbWetChange" />
-        <span class="reverb-val">{{ reverbWetPercent }}%</span>
+      <div class="settings-label">环境混响音效</div>
+      <div class="convolution-grid">
+        <button
+          v-for="preset in convolutionPresets"
+          :key="preset.name"
+          class="convolution-opt"
+          :class="{ active: player.convolutionSelectionKey === `builtin:${preset.name}` }"
+          @click="onSelectConvolution(preset)"
+        >{{ preset.label }}</button>
+      </div>
+      <div class="convolution-sliders" :class="{ disabled: !player.convolutionFileName }">
+        <div class="reverb-slider-row">
+          <span class="reverb-label">原始音频增益</span>
+          <input type="range" class="reverb-range" min="0" max="30" step="1" v-model.number="convMainGain" @input="onMainGainChange" />
+          <span class="reverb-val">{{ convMainGainDisplay }}%</span>
+        </div>
+        <div class="reverb-slider-row">
+          <span class="reverb-label">环境音效增益</span>
+          <input type="range" class="reverb-range" min="0" max="30" step="1" v-model.number="convSendGain" @input="onSendGainChange" />
+          <span class="reverb-val">{{ convSendGainDisplay }}%</span>
+        </div>
+      </div>
+      <!-- 预设管理 -->
+      <div class="convolution-presets">
+        <button
+          v-for="preset in player.convolutionPresets"
+          :key="preset.id"
+          class="convolution-preset-btn"
+          :class="{ active: player.convolutionSelectionKey === `user:${preset.id}` }"
+          :title="`加载预设: ${preset.name}\n右键删除`"
+          @click="onLoadPreset(preset)"
+          @contextmenu.prevent="onDeletePreset(preset.id)"
+        >{{ preset.name }}</button>
+        <button
+          class="convolution-preset-btn convolution-preset-add"
+          title="保存当前设置为预设"
+          @click="showSavePreset = true"
+        >+ 保存预设</button>
+      </div>
+      <!-- 保存预设输入框 -->
+      <div v-if="showSavePreset" class="convolution-save-row">
+        <input
+          v-model="newPresetName"
+          class="convolution-save-input"
+          placeholder="输入预设名称"
+          @keyup.enter="onSavePreset"
+          @keyup.escape="showSavePreset = false"
+          ref="saveInputRef"
+        />
+        <button class="convolution-save-ok" @click="onSavePreset">保存</button>
+        <button class="convolution-save-cancel" @click="showSavePreset = false">取消</button>
       </div>
     </div>
 
@@ -133,16 +175,16 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useApi } from '@/composables/useApi'
+import { convolutionPresets } from '@/composables/useAudioEngine'
 import { keyToDisplay } from '@/composables/useShortcuts'
 
 const library = useLibraryStore()
 const player = usePlayerStore()
 const api = useApi()
-
 const spectrumModes = [
   { key: 'bar', label: '条形频谱' },
   { key: 'square', label: '方格频谱' },
@@ -166,8 +208,65 @@ const shortcutList = [
 ]
 
 const recordingEl = ref(null)
-const reverbWetPercent = ref(Math.round(player.reverbWetGain * 100))
 const bassWetPercent = ref(Math.round(player.bassBoostWetGain * 100))
+const showSavePreset = ref(false)
+const newPresetName = ref('')
+const saveInputRef = ref(null)
+
+// Convolution gain display (stored as ×10, display as percentage)
+const convMainGain = ref(player.convolutionMainGain)
+const convSendGain = ref(player.convolutionSendGain)
+
+const convMainGainDisplay = computed(() => Math.round(convMainGain.value * 10))
+const convSendGainDisplay = computed(() => Math.round(convSendGain.value * 10))
+
+function onSelectConvolution(preset) {
+  player.selectConvolution(preset)
+  convMainGain.value = player.convolutionMainGain
+  convSendGain.value = player.convolutionSendGain
+  // PlayerBar watch 统一响应 convolution 变化，此处不重复调用 setConvolution
+  saveSettings()
+}
+
+function onMainGainChange() {
+  player.setConvolutionGains(convMainGain.value, player.convolutionSendGain)
+  // 增益变化由 PlayerBar watch 统一处理，避免与 AudioContext 并发冲突
+  saveSettings()
+}
+
+function onSendGainChange() {
+  player.setConvolutionGains(player.convolutionMainGain, convSendGain.value)
+  saveSettings()
+}
+
+function onLoadPreset(preset) {
+  player.loadConvolutionPreset(preset)
+  convMainGain.value = player.convolutionMainGain
+  convSendGain.value = player.convolutionSendGain
+  saveSettings()
+}
+
+function onDeletePreset(id) {
+  player.deleteConvolutionPreset(id)
+  saveSettings()
+}
+
+async function onSavePreset() {
+  const name = newPresetName.value.trim()
+  if (!name) return
+  player.saveConvolutionPreset(name)
+  showSavePreset.value = false
+  newPresetName.value = ''
+  saveSettings()
+}
+
+// Show save input and focus
+watch(showSavePreset, async (val) => {
+  if (val) {
+    await nextTick()
+    if (saveInputRef.value) saveInputRef.value.focus()
+  }
+})
 
 function themeUrl(path) {
   if (path && path.startsWith('covers/custom/')) {
@@ -212,16 +311,6 @@ function removeCustomTheme(index) {
     library.selectTheme('./background/img-green.jpg')
   }
   library.removeCustomTheme(index)
-  saveSettings()
-}
-
-function onReverbToggle() {
-  player.toggleReverb(player.reverbEnabled)
-  saveSettings()
-}
-
-function onReverbWetChange() {
-  player.reverbWetGain = reverbWetPercent.value / 100
   saveSettings()
 }
 
@@ -337,9 +426,10 @@ function clearAllData() {
   })
 }
 
-// Sync sliders on mount
-watch(() => player.reverbWetGain, (val) => { reverbWetPercent.value = Math.round(val * 100) })
+// Sync sliders
 watch(() => player.bassBoostWetGain, (val) => { bassWetPercent.value = Math.round(val * 100) })
+watch(() => player.convolutionMainGain, (val) => { convMainGain.value = val })
+watch(() => player.convolutionSendGain, (val) => { convSendGain.value = val })
 </script>
 
 <style scoped>

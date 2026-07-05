@@ -1,11 +1,14 @@
 const path = require('path')
 const fs = require('fs')
 const { app } = require('electron')
+const initSqlJs = require('sql.js')
 
-let db = null
+let db = null       // sql.js database instance
+let dbPath = ''     // path to .db file on disk
+let saveDb = null   // function to write database to disk
+let _inTransaction = false
 
 function getDataDir() {
-  // 打包后用 userData 目录（可读写），开发时用项目根目录
   return app.isPackaged
     ? path.join(app.getPath('userData'), 'db')
     : path.join(__dirname, '..', 'db')
@@ -19,11 +22,154 @@ function getDbPath() {
   return path.join(dbDir, 'music.db')
 }
 
-function initDatabase() {
-  const Database = require('better-sqlite3')
-  const dbPath = getDbPath()
-  db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
+// ──────────────────────────────────
+// sql.js → better-sqlite3 API 适配层
+// ──────────────────────────────────
+
+/**
+ * 包装 sql.js Database，使其 API 兼容 better-sqlite3：
+ *   db.prepare(sql).run(params)   → { changes, lastInsertRowid }
+ *   db.prepare(sql).get(params)   → row | undefined
+ *   db.prepare(sql).all(params)   → row[]
+ *   db.exec(sql)                  → void (DDL)
+ *   db.transaction(fn)            → function
+ *   db.pragma(str)                → void
+ *   db.close()                    → void（自动落盘）
+ */
+function wrapDatabase(sqlDb) {
+  const _origExec = sqlDb.exec.bind(sqlDb)
+  const _origRun = sqlDb.run.bind(sqlDb)
+  const _origPrepare = sqlDb.prepare.bind(sqlDb)
+
+  // ── prepare ──
+  sqlDb.prepare = function (sql) {
+    return {
+      run(params) {
+        _origRun(sql, _normalizeParams(params))
+        const changes = sqlDb.getRowsModified()
+        let lastInsertRowid
+        try {
+          const r = _origExec('SELECT last_insert_rowid() AS id')
+          if (r.length && r[0].values.length) lastInsertRowid = r[0].values[0][0]
+        } catch (_) { /* 非 INSERT 语句不会报错 */ }
+        if (!_inTransaction) saveDb()
+        return { changes, lastInsertRowid }
+      },
+      get(params) {
+        const stmt = _origPrepare(sql)
+        _bindStmt(stmt, params)
+        let row
+        if (stmt.step()) row = stmt.getAsObject()
+        stmt.free()
+        return row
+      },
+      all(params) {
+        const stmt = _origPrepare(sql)
+        _bindStmt(stmt, params)
+        const rows = []
+        while (stmt.step()) rows.push(stmt.getAsObject())
+        stmt.free()
+        return rows
+      }
+    }
+  }
+
+  // ── exec ──
+  sqlDb.exec = function (sql) {
+    const result = _origExec(sql)
+    if (!/^\s*SELECT\b/i.test(sql) && !_inTransaction) saveDb()
+    return result
+  }
+
+  // ── run ──
+  sqlDb.run = function (sql, params) {
+    _origRun(sql, _normalizeParams(params))
+    if (!_inTransaction) saveDb()
+  }
+
+  // ── transaction ──
+  sqlDb.transaction = function (fn) {
+    return function (...args) {
+      _inTransaction = true
+      sqlDb.exec('BEGIN')
+      try {
+        const result = fn(...args)
+        sqlDb.exec('COMMIT')
+        saveDb()
+        return result
+      } catch (e) {
+        sqlDb.exec('ROLLBACK')
+        throw e
+      } finally {
+        _inTransaction = false
+      }
+    }
+  }
+
+  // ── pragma ──
+  sqlDb.pragma = function (pragmaStr) {
+    sqlDb.exec('PRAGMA ' + pragmaStr)
+  }
+
+  // ── close ──
+  sqlDb.close = function () {
+    if (saveDb) saveDb()
+    if (typeof sqlDb._close === 'function') sqlDb._close()
+  }
+
+  return sqlDb
+}
+
+/** 将参数标准化为 sql.js 接受的数组或对象 */
+function _normalizeParams(params) {
+  if (params === undefined || params === null) return []
+  if (Array.isArray(params)) return params
+  if (typeof params === 'object') return params   // 命名参数对象，直接透传
+  return [params] // 原始值（string/number）包装为单元素数组
+}
+
+/** 安全绑定参数到 Statement */
+function _bindStmt(stmt, params) {
+  const p = _normalizeParams(params)
+  if (Array.isArray(p) ? p.length > 0 : p) {
+    stmt.bind(p)
+  }
+}
+
+// ──────────────────────────────────
+// 数据库 API（接口不变）
+// ──────────────────────────────────
+
+async function initDatabase() {
+  // 加载 sql.js（自动下载/使用内置 WASM）
+  const SQL = await initSqlJs()
+
+  dbPath = getDbPath()
+  const dbDir = getDataDir()
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true })
+
+  // 从磁盘加载已有数据库，或创建新库
+  if (fs.existsSync(dbPath)) {
+    const buffer = fs.readFileSync(dbPath)
+    db = new SQL.Database(buffer)
+  } else {
+    db = new SQL.Database()
+  }
+
+  // 落盘函数
+  saveDb = () => {
+    try {
+      const data = db.export()
+      fs.writeFileSync(dbPath, Buffer.from(data))
+    } catch (e) {
+      console.error('[DB] 保存数据库失败:', e.message)
+    }
+  }
+
+  // 包装为 better-sqlite3 兼容 API
+  db = wrapDatabase(db)
+
+  // 表结构初始化
   db.pragma('foreign_keys = ON')
 
   db.exec(`
@@ -50,23 +196,23 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);
   `)
 
-  // 创建默认分组
+  // 默认分组
   const count = db.prepare('SELECT COUNT(*) as cnt FROM categories').get()
   if (count.cnt === 0) {
     db.prepare("INSERT OR IGNORE INTO categories (name) VALUES ('默认列表')").run()
   }
 
-  // 兼容旧数据库：追加 lyrics / cover 列
-  try { db.exec('ALTER TABLE songs ADD COLUMN lyrics TEXT DEFAULT \'\'') } catch (_) {}
-  try { db.exec('ALTER TABLE songs ADD COLUMN cover TEXT DEFAULT \'\'') } catch (_) {}
+  // 兼容旧数据库
+  try { db.exec("ALTER TABLE songs ADD COLUMN lyrics TEXT DEFAULT ''") } catch (_) {}
+  try { db.exec("ALTER TABLE songs ADD COLUMN cover TEXT DEFAULT ''") } catch (_) {}
 
-  // 清除之前因 bug 写入的错误歌词数据
+  // 清除错误歌词
   db.prepare("UPDATE songs SET lyrics = '' WHERE lyrics = '[object Object]'").run()
 
-  // 归一化 file_path，解决普通导入(/)和扫描目录导入(\)路径分隔符不一致导致的重复问题
+  // 归一化文件路径
   normalizeFilePaths()
 
-  console.log('[DB] 数据库初始化完成:', dbPath)
+  console.log('[DB] 数据库初始化完成 (sql.js):', dbPath)
 }
 
 function closeDatabase() {
@@ -90,7 +236,6 @@ function addCategory(name) {
   return db.prepare('INSERT INTO categories (name) VALUES (?)').run(trimmed)
 }
 
-// 查找或创建分组（不存在则新建，返回 { id }）
 function findOrCreateCategory(name) {
   const trimmed = name.trim()
   if (!trimmed) throw new Error('分组名称不能为空')
@@ -118,35 +263,6 @@ function getSongsByCategory(categoryId) {
   return db.prepare(
     'SELECT * FROM songs WHERE category_id = ? ORDER BY created_at DESC'
   ).all(categoryId)
-}
-
-// ========== 应用设置（持久化到 db/settings.json）==========
-
-function getSettingsPath() {
-  const dbDir = getDataDir()
-  return path.join(dbDir, 'settings.json')
-}
-
-function getSettings() {
-  const sp = getSettingsPath()
-  try {
-    if (fs.existsSync(sp)) {
-      return JSON.parse(fs.readFileSync(sp, 'utf-8'))
-    }
-  } catch (e) {
-    console.error('[DB] 读取设置失败:', e.message)
-  }
-  return {}
-}
-
-function setSettings(settings) {
-  const sp = getSettingsPath()
-  const dir = path.dirname(sp)
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  fs.writeFileSync(sp, JSON.stringify(settings, null, 2), 'utf-8')
-  return true
 }
 
 function getAllSongsGrouped() {
@@ -204,7 +320,7 @@ function updateSong(id, data) {
   }
   if (fields.length === 0) return { changes: 0 }
   params.push(id)
-  return db.prepare(`UPDATE songs SET ${fields.join(', ')} WHERE id = ?`).run(...params)
+  return db.prepare(`UPDATE songs SET ${fields.join(', ')} WHERE id = ?`).run(params)
 }
 
 function removeMissingSongs() {
@@ -212,13 +328,12 @@ function removeMissingSongs() {
   let removed = 0
   for (const song of songs) {
     if (!fs.existsSync(song.file_path)) {
-      // 删除关联的封面文件
       if (song.cover) {
         try {
           const dbDir = getDataDir()
           const p = path.join(dbDir, song.cover)
           if (fs.existsSync(p)) fs.unlinkSync(p)
-        } catch (_) { /* 忽略删除失败 */ }
+        } catch (_) {}
       }
       db.prepare('DELETE FROM songs WHERE id = ?').run(song.id)
       removed++
@@ -227,7 +342,6 @@ function removeMissingSongs() {
   return { removed }
 }
 
-// 归一化所有 file_path，消除因路径分隔符不一致（/ vs \）导致的重复条目
 function normalizeFilePaths() {
   const songs = db.prepare('SELECT * FROM songs ORDER BY id ASC').all()
   const seen = new Set()
@@ -252,37 +366,53 @@ function normalizeFilePaths() {
   const updateStmt = db.prepare('UPDATE songs SET file_path = ? WHERE id = ?')
 
   const tx = db.transaction(() => {
-    for (const id of toDelete) {
-      deleteStmt.run(id)
-    }
-    for (const { id, file_path } of toUpdate) {
-      updateStmt.run(file_path, id)
-    }
+    for (const id of toDelete) deleteStmt.run(id)
+    for (const { id, file_path } of toUpdate) updateStmt.run(file_path, id)
   })
   tx()
 
-  if (toUpdate.length > 0) {
-    console.log(`[DB] 归一化 ${toUpdate.length} 条路径记录`)
-  }
-  if (toDelete.length > 0) {
-    console.log(`[DB] 移除 ${toDelete.length} 条因路径不一致产生的重复记录`)
-  }
+  if (toUpdate.length > 0) console.log(`[DB] 归一化 ${toUpdate.length} 条路径记录`)
+  if (toDelete.length > 0) console.log(`[DB] 移除 ${toDelete.length} 条因路径不一致产生的重复记录`)
 }
 
 function clearAllSongs() {
-  // 获取所有封面路径并删除文件
   const covers = db.prepare("SELECT cover FROM songs WHERE cover != ''").all()
   const dbDir = getDataDir()
   for (const { cover } of covers) {
     try {
       const p = path.join(dbDir, cover)
       if (fs.existsSync(p)) fs.unlinkSync(p)
-    } catch (_) { /* 忽略删除失败 */ }
+    } catch (_) {}
   }
-  // 清空数据表并重置自增ID
   db.exec('DELETE FROM songs')
   db.exec("DELETE FROM sqlite_sequence WHERE name='songs'")
   return { deleted: covers.length }
+}
+
+// ========== 应用设置（JSON 持久化） ==========
+
+function getSettingsPath() {
+  return path.join(getDataDir(), 'settings.json')
+}
+
+function getSettings() {
+  const sp = getSettingsPath()
+  try {
+    if (fs.existsSync(sp)) {
+      return JSON.parse(fs.readFileSync(sp, 'utf-8'))
+    }
+  } catch (e) {
+    console.error('[DB] 读取设置失败:', e.message)
+  }
+  return {}
+}
+
+function setSettings(settings) {
+  const sp = getSettingsPath()
+  const dir = path.dirname(sp)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(sp, JSON.stringify(settings, null, 2), 'utf-8')
+  return true
 }
 
 module.exports = {

@@ -14,12 +14,22 @@ export const usePlayerStore = defineStore('player', () => {
   const shuffleMode = ref(false)
   const spectrumVisible = ref(true)
   const spectrumMode = ref('bar')   // bar | square | 3d
-  const reverbEnabled = ref(false)
-  const reverbWetGain = ref(0.35)
+
+  // Convolution reverb state
+  const convolutionFileName = ref(null)    // null = disabled, or WAV file name
+  const convolutionMainGain = ref(0)       // 原始音频增益 (stored x10, UI: 0~300%)
+  const convolutionSendGain = ref(0)       // 环境音效增益 (stored x10, UI: 0~300%)
+  const convolutionSelectionKey = ref('builtin:default')
+
+  // Bass boost state
   const bassBoostEnabled = ref(false)
   const bassBoostFreq = ref(80)
   const bassBoostGain = ref(8)
   const bassBoostWetGain = ref(0.5)
+
+  // User convolution presets (saved in settings)
+  const convolutionPresets = ref([])
+
   const lrcLines = ref([])
   const currentLrcLine = ref(-1)
 
@@ -137,8 +147,58 @@ export const usePlayerStore = defineStore('player', () => {
     setVolume(volume.value + delta)
   }
 
-  function toggleReverb(enabled) {
-    reverbEnabled.value = enabled
+  // ---- Convolution reverb actions ----
+
+  function selectConvolution(preset) {
+    convolutionFileName.value = preset.source || null
+    convolutionMainGain.value = Math.round(preset.mainGain * 10)
+    convolutionSendGain.value = Math.round(preset.sendGain * 10)
+    convolutionSelectionKey.value = `builtin:${preset.name}`
+  }
+
+  function clearConvolution() {
+    convolutionFileName.value = null
+    convolutionMainGain.value = 0
+    convolutionSendGain.value = 0
+    convolutionSelectionKey.value = 'builtin:default'
+  }
+
+  function setConvolutionGains(mainGain, sendGain) {
+    convolutionMainGain.value = mainGain
+    convolutionSendGain.value = sendGain
+    convolutionSelectionKey.value = ''
+  }
+
+  // User preset management
+  function saveConvolutionPreset(name) {
+    const existing = convolutionPresets.value.findIndex(p => p.name === name)
+    const preset = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name,
+      source: convolutionFileName.value,
+      mainGain: convolutionMainGain.value,
+      sendGain: convolutionSendGain.value,
+    }
+    if (existing >= 0) {
+      convolutionPresets.value[existing] = preset
+    } else {
+      convolutionPresets.value.push(preset)
+    }
+    return preset
+  }
+
+  function loadConvolutionPreset(preset) {
+    convolutionFileName.value = preset.source || null
+    convolutionMainGain.value = preset.mainGain
+    convolutionSendGain.value = preset.sendGain
+    convolutionSelectionKey.value = `user:${preset.id}`
+  }
+
+  function deleteConvolutionPreset(id) {
+    const idx = convolutionPresets.value.findIndex(p => p.id === id)
+    if (idx >= 0) {
+      convolutionPresets.value.splice(idx, 1)
+    }
   }
 
   function toggleBassBoost(enabled) {
@@ -150,7 +210,9 @@ export const usePlayerStore = defineStore('player', () => {
     currentSongIndex, isPlaying, volume, isMuted,
     repeatMode, shuffleMode,
     spectrumVisible, spectrumMode,
-    reverbEnabled, reverbWetGain,
+    convolutionFileName, convolutionMainGain, convolutionSendGain,
+    convolutionSelectionKey,
+    convolutionPresets,
     bassBoostEnabled, bassBoostFreq, bassBoostGain, bassBoostWetGain,
     lrcLines, currentLrcLine,
     // getters
@@ -159,6 +221,8 @@ export const usePlayerStore = defineStore('player', () => {
     playSong, togglePlay, playNext, playPrev, stopPlayback,
     togglePlayMode, toggleSpectrum, cycleSpectrumMode, selectSpectrumMode,
     toggleMute, setVolume, adjustVolume,
-    toggleReverb, toggleBassBoost,
+    selectConvolution, clearConvolution, setConvolutionGains,
+    saveConvolutionPreset, loadConvolutionPreset, deleteConvolutionPreset,
+    toggleBassBoost,
   }
 })

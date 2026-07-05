@@ -6,9 +6,9 @@
         <i v-if="!hasCover" :class="coverIconClass"></i>
       </div>
       <div class="player-meta">
-        <div class="player-title" id="player-title">{{ currentTitle }}</div>
-        <div class="player-artist" id="player-artist">{{ currentArtist }}</div>
-        <div class="player-lrc" id="player-lrc">{{ currentLrcText }}</div>
+        <div class="player-title copyable-text" id="player-title">{{ currentTitle }}</div>
+        <div class="player-artist copyable-text" id="player-artist">{{ currentArtist }}</div>
+        <div class="player-lrc copyable-text" id="player-lrc">{{ currentLrcText }}</div>
       </div>
     </div>
 
@@ -29,16 +29,16 @@
         <button class="btn-ctrl btn-mode" :class="{ active: showModeActive }" :title="modeLabel" @click="player.togglePlayMode()">
           <i :class="'fa-solid ' + modeIcon"></i>
         </button>
-        <button class="btn-ctrl" title="上一曲" @click.stop="playPrev()">
+        <button class="btn-ctrl" title="上一首" @click.stop="playPrev()">
           <i class="fa-solid fa-backward-step"></i>
         </button>
-        <button class="btn-ctrl btn-play" title="播放" @click.stop="togglePlay()">
+        <button class="btn-ctrl btn-play" :title="player.isPlaying ? '暂停' : '播放'" @click.stop="togglePlay()">
           <i :class="player.isPlaying ? 'fa-solid fa-pause' : 'fa-solid fa-play'"></i>
         </button>
-        <button class="btn-ctrl" title="下一曲" @click.stop="playNext()">
+        <button class="btn-ctrl" title="下一首" @click.stop="playNext()">
           <i class="fa-solid fa-forward-step"></i>
         </button>
-        <button class="btn-volume-icon" title="静音" @click.stop="player.toggleMute()">
+        <button class="btn-volume-icon" :title="player.isMuted ? '取消静音' : '静音'" @click.stop="player.toggleMute()">
           <i :class="volumeIconClass"></i>
         </button>
         <div class="volume-bar" id="volume-bar" @mousedown="startDragVolume" ref="volumeBar">
@@ -277,8 +277,7 @@ onMounted(() => {
   })
 })
 
-// Watch current song change → load audio
-
+// Watch current song change and load audio
 watch(() => player.currentSongIndex, async (newIdx) => {
   if (newIdx < 0) return
   const song = player.playlist[newIdx]
@@ -305,10 +304,10 @@ watch(() => player.currentSongIndex, async (newIdx) => {
     const fileUrl = audioEngine.resolveFilePath(song.file_path)
     audioRef.value.src = fileUrl
     audioRef.value.volume = player.effectiveVolume
-    audioEngine.initAudioContext()
     if (!audioRef.value._spectrumConnected) {
       audioEngine.connectSource(audioRef.value)
     }
+    await audioEngine.ensureAudioContext()
     try {
       await audioRef.value.play()
       player.isPlaying = true
@@ -319,7 +318,7 @@ watch(() => player.currentSongIndex, async (newIdx) => {
   }
 })
 
-// Watch isPlaying → 控制音频播放/暂停（响应键盘快捷键和媒体键）
+// Watch isPlaying and control audio playback.
 watch(() => player.isPlaying, (playing) => {
   if (!audioRef.value || !audioRef.value.src || audioRef.value.src === window.location.href) return
   if (playing) {
@@ -336,15 +335,16 @@ watch(() => player.effectiveVolume, (vol) => {
   }
 })
 
-// Watch audio effects
-watch(() => player.reverbEnabled, (val) => {
-  audioEngine.updateReverb()
+// Watch convolution reverb and apply when any setting changes.
+watch([() => player.convolutionFileName, () => player.convolutionMainGain, () => player.convolutionSendGain], async () => {
+  await audioEngine.setConvolution(
+    player.convolutionFileName,
+    player.convolutionMainGain / 10,
+    player.convolutionSendGain / 10
+  )
 })
 
-watch(() => player.reverbWetGain, () => {
-  audioEngine.updateReverb()
-})
-
+// Watch bass boost
 watch(() => player.bassBoostEnabled, () => {
   audioEngine.updateBassFilter()
 })

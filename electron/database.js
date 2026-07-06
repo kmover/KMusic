@@ -44,7 +44,7 @@ function wrapDatabase(sqlDb) {
   // ── prepare ──
   sqlDb.prepare = function (sql) {
     return {
-      run(params) {
+      run(...params) {
         _origRun(sql, _normalizeParams(params))
         const changes = sqlDb.getRowsModified()
         let lastInsertRowid
@@ -55,7 +55,7 @@ function wrapDatabase(sqlDb) {
         if (!_inTransaction) saveDb()
         return { changes, lastInsertRowid }
       },
-      get(params) {
+      get(...params) {
         const stmt = _origPrepare(sql)
         _bindStmt(stmt, params)
         let row
@@ -63,7 +63,7 @@ function wrapDatabase(sqlDb) {
         stmt.free()
         return row
       },
-      all(params) {
+      all(...params) {
         const stmt = _origPrepare(sql)
         _bindStmt(stmt, params)
         const rows = []
@@ -82,7 +82,7 @@ function wrapDatabase(sqlDb) {
   }
 
   // ── run ──
-  sqlDb.run = function (sql, params) {
+  sqlDb.run = function (sql, ...params) {
     _origRun(sql, _normalizeParams(params))
     if (!_inTransaction) saveDb()
   }
@@ -121,11 +121,32 @@ function wrapDatabase(sqlDb) {
 }
 
 /** 将参数标准化为 sql.js 接受的数组或对象 */
-function _normalizeParams(params) {
+function _normalizeParams(args) {
+  if (!Array.isArray(args)) args = [args]
+  if (args.length === 0) return []
+
+  const params = args.length === 1 ? args[0] : args
   if (params === undefined || params === null) return []
   if (Array.isArray(params)) return params
-  if (typeof params === 'object') return params   // 命名参数对象，直接透传
+
+  if (_isPlainObject(params)) {
+    const named = {}
+    for (const [key, value] of Object.entries(params)) {
+      named[key] = value
+      if (!/^[:@$]/.test(key)) {
+        named[`@${key}`] = value
+        named[`:${key}`] = value
+        named[`$${key}`] = value
+      }
+    }
+    return named
+  }
+
   return [params] // 原始值（string/number）包装为单元素数组
+}
+
+function _isPlainObject(value) {
+  return Object.prototype.toString.call(value) === '[object Object]'
 }
 
 /** 安全绑定参数到 Statement */

@@ -165,7 +165,12 @@
           return;
         }
         if (!d.current) {
-          showPlaceholder('♪ ' + (d.title || '') + (d.artist ? (' - ' + d.artist) : ''));
+          // 有歌词但还没到当前句：渲染到 #current 以套用用户配置的样式，而非占位元素
+          placeholder.style.display = 'none';
+          current.style.display = 'block';
+          current.classList.add('paused');
+          current.textContent = '♪ ' + (d.title || '') + (d.artist ? (' - ' + d.artist) : '');
+          next.style.display = 'none';
           return;
         }
         placeholder.style.display = 'none';

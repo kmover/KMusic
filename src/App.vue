@@ -31,6 +31,7 @@ import { onMounted } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useAudioEngine } from '@/composables/useAudioEngine'
+import { useApi } from '@/composables/useApi'
 
 import TitleBar from './components/TitleBar.vue'
 import Sidebar from './components/Sidebar.vue'
@@ -44,6 +45,7 @@ import ConfirmModal from './components/ConfirmModal.vue'
 const library = useLibraryStore()
 const player = usePlayerStore()
 const audioEngine = useAudioEngine()
+const api = useApi()
 
 const isElectron = !!(window.electronAPI)
 
@@ -54,6 +56,11 @@ function onRootClick() {
 onMounted(async () => {
   // Load settings
   const settings = await library.loadSettings()
+
+  // 恢复桌面歌词窗口（若上次开启）
+  if (library.desktopLyricsEnabled && isElectron) {
+    await api.setDesktopLyricsEnabled(true)
+  }
 
   // Apply settings to player
   player.volume = (settings.volume !== undefined) ? settings.volume : 0.7

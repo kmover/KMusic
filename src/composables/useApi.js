@@ -94,6 +94,22 @@ export function useApi() {
       }
       return null
     },
+    async setDesktopLyricsEnabled(enabled) {
+      if (isElectron && window.electronAPI.lyrics) {
+        return await window.electronAPI.lyrics.setEnabled(enabled)
+      }
+      return enabled
+    },
+    pushLyricsData(data) {
+      if (isElectron && window.electronAPI.lyrics) {
+        window.electronAPI.lyrics.pushData(data)
+      }
+    },
+    pushLyricsStyle(style) {
+      if (isElectron && window.electronAPI.lyrics) {
+        window.electronAPI.lyrics.pushStyle(style)
+      }
+    },
   }
 
   return _api

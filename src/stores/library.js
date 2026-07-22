@@ -30,6 +30,19 @@ export const useLibraryStore = defineStore('library', () => {
   const confirmMessage = ref('')
   const confirmCallback = ref(null)
 
+  // 桌面歌词
+  const desktopLyricsEnabled = ref(false)
+  const desktopLyrics = ref({
+    fontSize: 36,
+    color: '#ffffff',
+    bgColor: '#000000',
+    bgOpacity: 0.25,
+    showNext: true,
+    align: 'center',   // center | left
+    alwaysOnTop: true,
+    clickThrough: false,
+  })
+
   // restore state
   const _restoreGroupId = ref(null)
   const _restoreSongId = ref(null)
@@ -184,6 +197,17 @@ export const useLibraryStore = defineStore('library', () => {
     closeConfirm()
   }
 
+  // 桌面歌词开关（主进程广播最终状态，这里乐观更新以保证按钮即时反馈）
+  async function toggleDesktopLyrics() {
+    const next = !desktopLyricsEnabled.value
+    desktopLyricsEnabled.value = next
+    try {
+      await api.setDesktopLyricsEnabled(next)
+    } catch (e) {
+      console.error('[DesktopLyrics] 切换失败:', e)
+    }
+  }
+
   // Settings persistence
   function saveSettings(playerStore) {
     const currentSong = playerStore ? playerStore.currentSong : null
@@ -212,6 +236,8 @@ export const useLibraryStore = defineStore('library', () => {
       lastGroupId: currentGroupId.value,
       lastSongId: currentSong ? currentSong.id : null,
       playlistVisible: showPlaylist.value,
+      desktopLyricsEnabled: desktopLyricsEnabled.value,
+      desktopLyrics: desktopLyrics.value,
     }
     const isElectron = !!(window.electronAPI)
     // 深拷贝去除 Vue 响应式 Proxy，避免 IPC 结构化克隆报错
@@ -249,6 +275,12 @@ export const useLibraryStore = defineStore('library', () => {
     _restoreSongId.value = settings.lastSongId || null
     _restorePlaylistVisible.value = settings.playlistVisible
 
+    // 桌面歌词
+    desktopLyricsEnabled.value = !!settings.desktopLyricsEnabled
+    if (settings.desktopLyrics && typeof settings.desktopLyrics === 'object') {
+      desktopLyrics.value = Object.assign(desktopLyrics.value, settings.desktopLyrics)
+    }
+
     return settings
   }
 
@@ -262,6 +294,7 @@ export const useLibraryStore = defineStore('library', () => {
     showGroupModal, showConfirmModal,
     confirmMessage, confirmCallback,
     _restoreGroupId, _restoreSongId, _restorePlaylistVisible,
+    desktopLyricsEnabled, desktopLyrics,
     // getters
     filteredSongs, currentThemeUrl, modeDisplay,
     // actions
@@ -272,6 +305,7 @@ export const useLibraryStore = defineStore('library', () => {
     toggleSettings, closeSettings, togglePlaylist,
     openGroupModal, closeGroupModal,
     showConfirm, closeConfirm, confirmOk,
+    toggleDesktopLyrics,
     saveSettings, loadSettings,
   }
 })

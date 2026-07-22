@@ -9,6 +9,10 @@ app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling')
 
 let mainWindow = null
 let tray = null
+let lyricsWindow = null
+let lyricsSaveTimer = null
+let lyricsClickThrough = false   // 是否启用鼠标穿透
+let lyricsIgnoreState = true     // 当前 setIgnoreMouseEvents 状态（避免重复调用）
 let mediaKeysActive = true  // 默认开启
 const isDev = !app.isPackaged
 
@@ -71,6 +75,20 @@ function createWindow() {
       Menu.buildFromTemplate(template).popup({ window: mainWindow })
     }
   })
+}
+
+// 应用桌面歌词窗口的鼠标穿透（操作系统层面）
+// 使用 forward:true 让穿透时点击继续转发到下层窗口，
+// 并通过 webContents 的 mousemove 在工具栏区域临时取消穿透，保留关闭按钮可用。
+function setLyricsClickThrough(enabled) {
+  lyricsClickThrough = !!enabled
+  if (!lyricsWindow) return
+  try {
+    lyricsIgnoreState = lyricsClickThrough
+    lyricsWindow.setIgnoreMouseEvents(lyricsClickThrough, { forward: true })
+  } catch (e) {
+    console.error('[Lyrics] 设置鼠标穿透失败:', e.message)
+  }
 }
 
 // 根据扩展名返回 MIME 类型
@@ -172,6 +190,88 @@ function registerCustomProtocol() {
     } catch (err) {
       console.error('[Bg Protocol] Error:', err.message)
       return new Response('Not Found', { status: 404 })
+    }
+  })
+}
+
+// ========== 桌面歌词窗口 ==========
+// 保存桌面歌词窗口位置（合并写入 settings.json，避免覆盖其它设置）
+function saveLyricsBounds() {
+  if (!lyricsWindow) return
+  try {
+    const bounds = lyricsWindow.getBounds()
+    const settings = database.getSettings()
+    settings.lyricsWindowBounds = bounds
+    database.setSettings(settings)
+  } catch (e) {
+    console.error('[Lyrics] 保存窗口位置失败:', e.message)
+  }
+}
+
+function createLyricsWindow() {
+  const saved = database.getSettings() || {}
+  const savedDesktop = saved.desktopLyrics || {}
+  const savedBounds = saved.lyricsWindowBounds
+
+  lyricsWindow = new BrowserWindow({
+    width: savedBounds && savedBounds.width ? savedBounds.width : 900,
+    height: savedBounds && savedBounds.height ? savedBounds.height : 130,
+    minWidth: 320,
+    minHeight: 60,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    alwaysOnTop: savedDesktop.alwaysOnTop !== false,
+    skipTaskbar: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  })
+
+  // 恢复上次保存的位置
+  if (savedBounds && typeof savedBounds.x === 'number' && typeof savedBounds.y === 'number') {
+    try { lyricsWindow.setBounds(savedBounds) } catch (_) {}
+  }
+
+  if (isDev) {
+    lyricsWindow.loadURL('http://localhost:5173/desklyrics.html')
+  } else {
+    lyricsWindow.loadFile(path.join(__dirname, '..', 'dist', 'desklyrics.html'))
+  }
+
+  // 拦截关闭，改为隐藏（与托盘一致）
+  lyricsWindow.on('close', (event) => {
+    event.preventDefault()
+    lyricsWindow.hide()
+  })
+
+  // 移动/缩放/隐藏时持久化位置（防抖）
+  const scheduleSaveBounds = () => {
+    if (lyricsSaveTimer) clearTimeout(lyricsSaveTimer)
+    lyricsSaveTimer = setTimeout(saveLyricsBounds, 300)
+  }
+  lyricsWindow.on('moved', scheduleSaveBounds)
+  lyricsWindow.on('resize', scheduleSaveBounds)
+  lyricsWindow.on('hide', saveLyricsBounds)
+
+  // 鼠标穿透时，若移动到工具栏区域则临时取消穿透，使关闭按钮可点击
+  lyricsWindow.webContents.on('mousemove', (_event, point) => {
+    if (!lyricsClickThrough || !lyricsWindow) return
+    const w = lyricsWindow.getBounds().width
+    // 工具栏：top:6 right:10，按钮约 22x22
+    const toolbarLeft = w - 32
+    const toolbarRight = w - 10
+    const toolbarTop = 6
+    const toolbarBottom = 28
+    const overToolbar = point.x >= toolbarLeft && point.x <= toolbarRight &&
+                        point.y >= toolbarTop && point.y <= toolbarBottom
+    const shouldIgnore = !overToolbar
+    if (shouldIgnore !== lyricsIgnoreState) {
+      lyricsIgnoreState = shouldIgnore
+      try { lyricsWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true }) } catch (_) {}
     }
   })
 }
@@ -714,6 +814,46 @@ function registerIpcHandlers() {
       return null
     }
   })
+
+  // ========== 桌面歌词窗口 ==========
+  ipcMain.handle('lyrics:setEnabled', (_event, enabled) => {
+    if (!lyricsWindow) return false
+    if (enabled) {
+      if (!lyricsWindow.isVisible()) lyricsWindow.show()
+    } else {
+      if (lyricsWindow.isVisible()) lyricsWindow.hide()
+    }
+    // 开启时按已保存的设置应用鼠标穿透
+    const s = database.getSettings() || {}
+    setLyricsClickThrough(!!(s.desktopLyrics && s.desktopLyrics.clickThrough))
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyrics:enabled', enabled)
+    }
+    return enabled
+  })
+
+  // 主渲染进程推送歌词数据到桌面歌词窗口
+  ipcMain.on('lyrics:data', (_event, data) => {
+    if (lyricsWindow && lyricsWindow.isVisible() && lyricsWindow.webContents) {
+      lyricsWindow.webContents.send('lyrics:update', data)
+    }
+  })
+
+  // 主渲染进程推送样式设置到桌面歌词窗口
+  ipcMain.on('lyrics:style', (_event, style) => {
+    if (lyricsWindow) {
+      // 窗口级属性由主进程应用
+      if (typeof style.alwaysOnTop === 'boolean') {
+        lyricsWindow.setAlwaysOnTop(style.alwaysOnTop)
+      }
+      if (typeof style.clickThrough === 'boolean') {
+        setLyricsClickThrough(style.clickThrough)
+      }
+      if (lyricsWindow.webContents) {
+        lyricsWindow.webContents.send('lyrics:style', style)
+      }
+    }
+  })
 }
 
 function ensureWindow() {
@@ -814,6 +954,7 @@ app.whenReady().then(async () => {
     registerCustomProtocol()
     registerIpcHandlers()
     createWindow()
+    createLyricsWindow()
     createTray()
     registerMediaKeys()
   } catch (e) {

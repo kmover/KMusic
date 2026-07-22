@@ -48,10 +48,13 @@
             </div>
           </div>
         </div>
-        <button class="btn-ctrl" title="播放列表" @click.stop="library.togglePlaylist()">
+        <button class="btn-ctrl" title="播放列表" :class="{ active: library.showPlaylist }" @click.stop="library.togglePlaylist()">
           <i class="fa-solid fa-list"></i>
         </button>
-        <button class="btn-ctrl" title="设置" @click.stop="library.toggleSettings()">
+        <button class="btn-ctrl" title="桌面歌词" :class="{ active: library.desktopLyricsEnabled }" @click.stop="library.toggleDesktopLyrics()">
+          <i class="fa-solid fa-comment-dots"></i>
+        </button>
+        <button class="btn-ctrl" title="设置" :class="{ active: library.showSettings }" @click.stop="library.toggleSettings()">
           <i class="fa-solid fa-gear"></i>
         </button>
       </div>
@@ -216,6 +219,30 @@ function onCanPlay() {
   // Audio ready
 }
 
+// 桌面歌词：推送当前歌词数据到悬浮窗
+function pushLyricsData() {
+  if (!library.desktopLyricsEnabled) return
+  const lines = player.lrcLines || []
+  const idx = player.currentLrcLine
+  const current = (idx >= 0 && lines[idx]) ? lines[idx].text : ''
+  const nextLine = (library.desktopLyrics.showNext && idx >= 0 && lines[idx + 1]) ? lines[idx + 1].text : ''
+  api.pushLyricsData({
+    current,
+    next: nextLine,
+    title: player.currentSong?.title || '',
+    artist: player.currentSong?.artist || '',
+    isPlaying: player.isPlaying,
+    hasLyrics: lines.length > 0,
+    noSong: !player.currentSong,
+  })
+}
+
+// 桌面歌词：推送样式设置到悬浮窗
+function pushLyricsStyle() {
+  if (!library.desktopLyricsEnabled) return
+  api.pushLyricsStyle({ ...library.desktopLyrics })
+}
+
 // Playback controls
 
 function togglePlay() {
@@ -275,6 +302,17 @@ onMounted(() => {
     isDraggingProgress = false
     isDraggingVolume = false
   })
+
+  // 桌面歌词：接收主进程广播的开关状态，同步 store 并立即推送
+  if (window.electronAPI && window.electronAPI.lyrics) {
+    window.electronAPI.lyrics.onEnabledChanged((enabled) => {
+      library.desktopLyricsEnabled = enabled
+      if (enabled) {
+        pushLyricsStyle()
+        pushLyricsData()
+      }
+    })
+  }
 })
 
 // Watch current song change and load audio
@@ -360,6 +398,28 @@ watch(() => player.bassBoostGain, () => {
 watch(() => player.bassBoostWetGain, () => {
   audioEngine.updateBassFilter()
 })
+
+// 桌面歌词：歌词行变化/播放状态/切歌时推送数据
+watch(() => player.currentLrcLine, () => {
+  if (library.desktopLyricsEnabled) pushLyricsData()
+})
+
+watch(() => player.isPlaying, () => {
+  if (library.desktopLyricsEnabled) pushLyricsData()
+})
+
+watch(() => player.lrcLines, () => {
+  if (library.desktopLyricsEnabled) pushLyricsData()
+})
+
+watch(() => player.currentSongIndex, () => {
+  nextTick(() => { if (library.desktopLyricsEnabled) pushLyricsData() })
+})
+
+// 桌面歌词：样式设置变化时推送
+watch(() => library.desktopLyrics, () => {
+  if (library.desktopLyricsEnabled) pushLyricsStyle()
+}, { deep: true })
 
 async function loadCover(song) {
   if (!song.cover) {

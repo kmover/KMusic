@@ -153,6 +153,45 @@
       </label>
     </div>
 
+    <!-- 桌面歌词 -->
+    <div class="settings-section">
+      <div class="settings-label">桌面歌词</div>
+      <p class="settings-hint">在控制条点击「桌面歌词」按钮开启悬浮窗</p>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">字号</span>
+        <input type="range" class="reverb-range" min="20" max="72" step="1" v-model.number="library.desktopLyrics.fontSize" @input="saveSettings" />
+        <span class="reverb-val">{{ library.desktopLyrics.fontSize }}px</span>
+      </div>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">文字颜色</span>
+        <input type="color" class="lyrics-color" v-model="library.desktopLyrics.color" @input="saveSettings" />
+      </div>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">背景不透明度</span>
+        <input type="range" class="reverb-range" min="0" max="100" step="1" v-model.number="lyricsBgPercent" @input="saveSettings" />
+        <span class="reverb-val">{{ lyricsBgPercent }}%</span>
+      </div>
+      <div class="reverb-slider-row">
+        <span class="reverb-label">对齐</span>
+        <select v-model="library.desktopLyrics.align" @change="saveSettings" class="settings-select">
+          <option value="center">居中</option>
+          <option value="left">居左</option>
+        </select>
+      </div>
+      <label class="settings-toggle">
+        <input type="checkbox" v-model="library.desktopLyrics.alwaysOnTop" @change="saveSettings" />
+        <span>始终置顶显示</span>
+      </label>
+      <label class="settings-toggle">
+        <input type="checkbox" v-model="library.desktopLyrics.clickThrough" @change="saveSettings" />
+        <span>鼠标穿透（点击穿透到后方窗口）</span>
+      </label>
+      <label class="settings-toggle">
+        <input type="checkbox" v-model="library.desktopLyrics.showNext" @change="saveSettings" />
+        <span>显示下一句歌词</span>
+      </label>
+    </div>
+
     <!-- 数据管理 -->
     <div class="settings-section">
       <div class="settings-label">数据管理</div>
@@ -219,6 +258,12 @@ const convSendGain = ref(player.convolutionSendGain)
 
 const convMainGainDisplay = computed(() => Math.round(convMainGain.value * 10))
 const convSendGainDisplay = computed(() => Math.round(convSendGain.value * 10))
+
+// 桌面歌词：背景不透明度（0~1）与滑动条（0~100）互转
+const lyricsBgPercent = computed({
+  get: () => Math.round((library.desktopLyrics.bgOpacity ?? 0.25) * 100),
+  set: (v) => { library.desktopLyrics.bgOpacity = v / 100 }
+})
 
 function onSelectConvolution(preset) {
   player.selectConvolution(preset)

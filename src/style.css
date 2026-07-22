@@ -793,6 +793,15 @@ textarea:focus-visible,
 .btn-mode.active {
   color: var(--accent);
 }
+/* 桌面歌词开关：开启时填充主题色高亮，关闭时默认灰态 */
+.btn-ctrl.active {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-ctrl.active:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
 
 /* 进度条 */
 #time-current,
@@ -1308,6 +1317,32 @@ textarea:focus-visible,
   text-align: right;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+/* 桌面歌词设置提示 */
+.settings-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 4px 0 8px 0;
+  opacity: 0.7;
+}
+.settings-select {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+.lyrics-color {
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
 }
 /* 设置面板中的清空按钮 */
 .settings-data-actions {

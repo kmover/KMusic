@@ -199,7 +199,17 @@ function registerCustomProtocol() {
 function saveLyricsBounds() {
   if (!lyricsWindow) return
   try {
-    const bounds = lyricsWindow.getBounds()
+    const b = lyricsWindow.getBounds() // { x, y, width, height }
+    const bounds = {
+      left: b.x,
+      top: b.y,
+      right: b.x + b.width,
+      bottom: b.y + b.height,
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
+    }
     const settings = database.getSettings()
     settings.lyricsWindowBounds = bounds
     database.setSettings(settings)
@@ -211,11 +221,19 @@ function saveLyricsBounds() {
 function createLyricsWindow() {
   const saved = database.getSettings() || {}
   const savedDesktop = saved.desktopLyrics || {}
-  const savedBounds = saved.lyricsWindowBounds
+  const b = saved.lyricsWindowBounds
+
+  const winWidth = (b && b.width) ? b.width : 900
+  const winHeight = (b && b.height) ? b.height : 130
+  // 优先使用显式记录的 left/top，回退到 x/y
+  const posX = (b && typeof b.left === 'number') ? b.left
+    : (b && typeof b.x === 'number') ? b.x : undefined
+  const posY = (b && typeof b.top === 'number') ? b.top
+    : (b && typeof b.y === 'number') ? b.y : undefined
 
   lyricsWindow = new BrowserWindow({
-    width: savedBounds && savedBounds.width ? savedBounds.width : 900,
-    height: savedBounds && savedBounds.height ? savedBounds.height : 130,
+    width: winWidth,
+    height: winHeight,
     minWidth: 320,
     minHeight: 60,
     frame: false,
@@ -223,6 +241,7 @@ function createLyricsWindow() {
     resizable: true,
     alwaysOnTop: savedDesktop.alwaysOnTop !== false,
     skipTaskbar: true,
+    show: false, // 默认隐藏，仅当 desktopLyricsEnabled 为 true 时由 lyrics:setEnabled 显示
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -231,9 +250,9 @@ function createLyricsWindow() {
     }
   })
 
-  // 恢复上次保存的位置
-  if (savedBounds && typeof savedBounds.x === 'number' && typeof savedBounds.y === 'number') {
-    try { lyricsWindow.setBounds(savedBounds) } catch (_) {}
+  // 恢复上次保存的位置（left/top 或 x/y）
+  if (typeof posX === 'number' && typeof posY === 'number') {
+    try { lyricsWindow.setBounds({ x: posX, y: posY, width: winWidth, height: winHeight }) } catch (_) {}
   }
 
   if (isDev) {
@@ -740,7 +759,10 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('settings:set', (_event, settings) => {
-    return database.setSettings(settings)
+    // 合并写入，避免覆盖主进程单独保存的字段（如 lyricsWindowBounds）
+    const existing = database.getSettings() || {}
+    const merged = Object.assign({}, existing, settings)
+    return database.setSettings(merged)
   })
 
   // === 窗口控制 ===
@@ -826,6 +848,13 @@ function registerIpcHandlers() {
     // 开启时按已保存的设置应用鼠标穿透
     const s = database.getSettings() || {}
     setLyricsClickThrough(!!(s.desktopLyrics && s.desktopLyrics.clickThrough))
+    // 持久化歌词开/关状态（合并写入，不影响其它设置）
+    try {
+      s.desktopLyricsEnabled = !!enabled
+      database.setSettings(s)
+    } catch (e) {
+      console.error('[Lyrics] 保存开关状态失败:', e.message)
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('lyrics:enabled', enabled)
     }

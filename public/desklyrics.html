@@ -107,15 +107,27 @@
         return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
       }
 
-      // 解析颜色为 rgb 数组
-      function parseColor(color) {
-        var hex = (color || '#ffffff').replace('#', '');
-        if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
-        return [
-          parseInt(hex.substr(0, 2), 16) || 255,
-          parseInt(hex.substr(2, 2), 16) || 255,
-          parseInt(hex.substr(4, 2), 16) || 255
-        ];
+      // 将 CSS 颜色字符串转为带指定 alpha 的 rgba（兼容 hex/#rrggbb/rgb/rgba 等格式）
+      function colorWithAlpha(cssColor, alpha) {
+        if (!cssColor) return 'rgba(255,255,255,' + alpha + ')';
+        var c = cssColor.trim();
+        // 已是 rgba
+        if (c.indexOf('rgba') === 0) {
+          return c.replace(/[\d.]+\s*\)$/, alpha + ')');
+        }
+        // 已是 rgb → 转 rgba
+        if (c.indexOf('rgb(') === 0) {
+          return c.replace('rgb(', 'rgba(').replace(')', ',' + alpha + ')');
+        }
+        // hex 格式
+        var hex = c.replace('#', '');
+        if (hex.length === 3) hex = hex.split('').map(function (x) { return x + x; }).join('');
+        if (hex.length !== 6) return 'rgba(255,255,255,' + alpha + ')';
+        var r = parseInt(hex.substr(0, 2), 16);
+        var g = parseInt(hex.substr(2, 2), 16);
+        var b = parseInt(hex.substr(4, 2), 16);
+        if (isNaN(r) || isNaN(g) || isNaN(b)) return 'rgba(255,255,255,' + alpha + ')';
+        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
       }
 
       function applyStyle(s) {
@@ -150,38 +162,37 @@
         ctx.clearRect(0, 0, w, h);
 
         if (!currentData) {
-          drawText('KMusic 桌面歌词', fs * 0.55, 'center', [255, 255, 255, 153], true);
+          drawText('KMusic 桌面歌词', fs * 0.55, 'center', 'rgba(255,255,255,0.6)', true);
           return;
         }
 
         if (currentData.noSong) {
-          drawText('KMusic 桌面歌词', fs * 0.55, 'center', [255, 255, 255, 153], true);
+          drawText('KMusic 桌面歌词', fs * 0.55, 'center', 'rgba(255,255,255,0.6)', true);
           return;
         }
 
         if (!currentData.hasLyrics) {
           var txt = (currentData.title ? currentData.title + ' - ' : '') + (currentData.artist || '');
-          drawText(txt || '♪', fs, state.align, parseColor(state.color), !currentData.isPlaying);
+          drawText(txt || '♪', fs, state.align, state.color || '#ffffff', !currentData.isPlaying);
           return;
         }
 
         if (!currentData.current) {
           var txt2 = '♪ ' + (currentData.title || '') + (currentData.artist ? (' - ' + currentData.artist) : '');
-          drawText(txt2 || '♪', fs, state.align, parseColor(state.color), true);
+          drawText(txt2 || '♪', fs, state.align, state.color || '#ffffff', true);
           return;
         }
 
         // 主行歌词
         var mainY = fs;
-        drawText(currentData.current, fs, state.align, parseColor(state.color), !currentData.isPlaying, mainY);
+        drawText(currentData.current, fs, state.align, state.color || '#ffffff', !currentData.isPlaying, mainY);
 
         // 下一行歌词
         if (state.showNext && currentData.next) {
           var nextFs = Math.round(fs * 0.62);
-          var nextColor = parseColor(state.color);
-          // next 行降低不透明度
-          nextColor[3] = Math.round((nextColor[3] === undefined ? 255 : nextColor[3]) * 0.55);
-          drawText(currentData.next, nextFs, state.align, nextColor, !currentData.isPlaying, mainY + nextFs * 1.2 + 6);
+          // next 行用 colorWithAlpha 降低不透明度
+          var nextColorStr = colorWithAlpha(state.color || '#ffffff', 0.55);
+          drawText(currentData.next, nextFs, state.align, nextColorStr, !currentData.isPlaying, mainY + nextFs * 1.2 + 6);
         }
       }
 
@@ -190,7 +201,7 @@
        * @param {string} text - 文字内容
        * @param {number} fontSize - 字号
        * @param {string} align - left/center
-       * @param {number[]} color - [r,g,b,a] 0-255
+       * @param {string} color - CSS 颜色字符串（#rrggbb / rgb() / rgba() 等）
        * @param {boolean} paused - 是否暂停（斜体+半透明）
        * @param {number} baselineY - 基线 Y 坐标（默认居中）
        */
@@ -212,6 +223,11 @@
         // 描边宽度随字号缩放（核心：比 DOM text-shadow 更粗更清晰）
         var strokeW = Math.max(1.5, fontSize / 20);
 
+        // 暂停时整体降低不透明度
+        if (paused) {
+          ctx.globalAlpha = 0.7;
+        }
+
         // ====== 第一层：白色描边（stroke）======
         ctx.strokeStyle = 'rgba(255,255,255,1)';
         ctx.lineWidth = strokeW;
@@ -220,9 +236,11 @@
         ctx.strokeText(text, x, y);
 
         // ====== 第二层：文字填充 ======
-        var alpha = (color[3] !== undefined ? color[3] : 255) / 255;
-        ctx.fillStyle = 'rgba(' + color[0] + ',' + color[1] + ',' + color[2] + ',' + (paused ? alpha * 0.7 : alpha) + ')';
+        ctx.fillStyle = color || '#ffffff';
         ctx.fillText(text, x, y);
+
+        // 恢复 globalAlpha
+        ctx.globalAlpha = 1;
       }
 
       function update(d) {
